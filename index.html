@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Maze Chase — HTML</title>
+  <style>
+    :root {
+      --bg: #0f1216;
+      --panel: #0b0f14;
+      --panel-brd: #1b2531;
+      --text: #e8f0fe;
+      --muted: #9fb3c8;
+      --muted2: #dbe7ff;
+      --help: #6f7e91;
+      --btn: #2a2d31;
+      --btn2: #394a7a;
+      --wall: #2b2f3a;
+      --floor: #11161d;
+      --exit: #1e7a3a;
+      --power: #1e4b7a;
+      --enemy: #8b1c1c;
+      --player: #caa052;
+      --cell-brd: #0b0f14;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+    }
+    .wrap { width: min(100%, 720px); display:flex; flex-direction:column; align-items:center; }
+    .header { text-align:center; margin-bottom: 6px; }
+    .title { font-size: 24px; font-weight: 800; letter-spacing: .5px; }
+    .subtitle { color: var(--muted); margin-top: 2px; font-weight: 700; }
+    .message { color: var(--muted2); margin-top: 4px; }
+
+    .grid {
+      background: var(--panel);
+      border: 2px solid var(--panel-brd);
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 10px 0;
+      display: inline-block;
+    }
+    .row { display:flex; }
+    .cell {
+      width: var(--cell);
+      height: var(--cell);
+      border: 1px solid var(--cell-brd);
+      background: var(--floor);
+    }
+    .cell.wall { background: var(--wall); }
+    .cell.exit { background: var(--exit); }
+    .cell.power { background: var(--power); }
+    .cell.enemy { background: var(--enemy); }
+    .cell.player { background: var(--player); }
+
+    .controls { margin-top: 4px; display:flex; flex-direction:column; align-items:center; gap: 8px; }
+    .row-btns { display:flex; gap:12px; }
+    .btn, .btn-sm {
+      background: var(--btn);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 24px;
+      font-weight: 800;
+      font-size: 16px;
+      min-width: 110px;
+      cursor: pointer;
+      transition: transform .05s ease, opacity .1s ease;
+      touch-action: manipulation;
+    }
+    .btn:active, .btn-sm:active { transform: scale(.98); opacity:.9; }
+    .btn-sm { background: var(--btn2); padding: 8px 14px; font-weight:700; font-size: 14px; min-width: auto; border-radius:10px; }
+    .footer { display:flex; gap:12px; margin-top:8px; flex-wrap:wrap; justify-content:center; }
+
+    .help { margin-top:8px; text-align:center; }
+    .help p { margin:.25rem 0; color: var(--help); font-size: 12px; }
+
+    @media (hover:hover) {
+      .btn:hover, .btn-sm:hover { filter: brightness(1.05); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div class="title">Maze Chase</div>
+      <div id="subtitle" class="subtitle"></div>
+      <div id="message" class="message"></div>
+    </div>
+
+    <div id="grid" class="grid"></div>
+
+    <div id="controls" class="controls" aria-label="D-Pad controls">
+      <div class="row-btns"><button class="btn" data-dir="up">Up</button></div>
+      <div class="row-btns">
+        <button class="btn" data-dir="left">Left</button>
+        <button class="btn" data-dir="right">Right</button>
+      </div>
+      <div class="row-btns"><button class="btn" data-dir="down">Down</button></div>
+    </div>
+
+    <div id="footer" class="footer"></div>
+
+    <div id="help" class="help">
+      <p>Notes: Blue = freeze enemies, Green = exit.</p>
+      <p>Mods: ENEMY_TICK_MS, FREEZE_DURATION_MS, lives.</p>
+    </div>
+  </div>
+
+  <script>
+    // ------- CONSTANTS -------
+    const ENEMY_TICK_MS = 350;
+    const FREEZE_DURATION_MS = 3000;
+    const LIVES_START = 1;
+    const REQUIRE_ALL_POWERUPS = false;
+
+    // Levels (11 rows x 15 cols)
+    const LEVELS = [
+      [
+        "###############",
+        "#S    #    M  #",
+        "# ### # # ### #",
+        "#   #   #     #",
+        "### # ### ### #",
+        "#   #     #   #",
+        "# ### ### # ###",
+        "#   O   # #  G#",
+        "### ### # ### #",
+        "#     #   O   #",
+        "###############",
+      ],
+      [
+        "###############",
+        "#S       O   M#",
+        "# ### ### ### #",
+        "#   #     #   #",
+        "# ### ### ### #",
+        "#   #   O   # #",
+        "### # ##### # #",
+        "#   #   #   # #",
+        "# ### # # ### #",
+        "#   O   #  MG #",
+        "###############",
+      ],
+      [
+        "###############",
+        "#S  #     #   #",
+        "# # ### # # # #",
+        "# #   # #   # #",
+        "# ### # ### # #",
+        "#   O   #   # #",
+        "### ### # ### #",
+        "#   #   #   # #",
+        "# # # ### #M# #",
+        "#M#   O   # G #",
+        "###############",
+      ],
+      [
+        "###############",
+        "#S    #    MO #",
+        "# ### # ### # #",
+        "#   # #   # # #",
+        "### # # # # # #",
+        "# O #   # # # #",
+        "# # ### # # # #",
+        "# #   # # # # #",
+        "# ### # # # # #",
+        "#   M   #   G #",
+        "###############",
+      ],
+      [
+        "###############",
+        "#S  O   #   G #",
+        "# ### # # ### #",
+        "#   # # #   # #",
+        "### # # ### # #",
+        "#   #   M   # #",
+        "# ### ### ### #",
+        "#   #   #   # #",
+        "# O # ### # # #",
+        "#   #   O  M#G#",
+        "###############",
+      ],
+    ];
+
+    const WIN_ART = [
+      "     XXX       ",
+      "    XXXXX      ",
+      "   XXXXXXX     ",
+      "   XX XXX      ",
+      "   XXXXXXX     ",
+      "    XXXXX   X  ",
+      "  X  XXX   X   ",
+      "  X         X  ",
+      "  XXXX  X  XX  ",
+      "  X  X  XXX X  ",
+      "               ",
+    ];
+    const WIN_ON_COLOR = "#caa052"; // gold
+    const WIN_OFF_COLOR = "#11161d"; // floor
+
+    // ------- STATE -------
+    let levelIndex = 0;
+    let grid = [];
+    let player = { r:0, c:0 };
+    let enemies = [];
+    let powerups = new Set();
+    let exit = { r:0, c:0 };
+    let lives = LIVES_START;
+    let frozenUntil = 0;
+    let won = false;
+    let lost = false;
+    let gameWon = false;
+    let message = "Reach the exit!";
+
+    // DOM refs
+    const gridEl = document.getElementById('grid');
+    const subtitleEl = document.getElementById('subtitle');
+    const messageEl = document.getElementById('message');
+    const footerEl = document.getElementById('footer');
+
+    const dirs = {
+      up:    { r:-1, c:0 },
+      down:  { r: 1, c:0 },
+      left:  { r: 0, c:-1},
+      right: { r: 0, c: 1},
+    };
+
+    function inBounds(g, r, c){ return r>=0 && r<g.length && c>=0 && c<g[0].length; }
+    function isWall(g, r, c){ return g[r][c] === '#'; }
+
+    function parseLevel(levelRows){
+      const g = levelRows.map(row=>row.split(''));
+      let start = { r:0, c:0 };
+      const e = [];
+      const p = new Set();
+      let ex = { r:0, c:0 };
+      g.forEach((row, r)=>{
+        row.forEach((ch,c)=>{
+          if(ch==='S'){ start={r,c}; g[r][c]=' '; }
+          else if(ch==='M'){ e.push({r,c}); g[r][c]=' '; }
+          else if(ch==='O'){ p.add(`${r},${c}`); g[r][c]=' '; }
+          else if(ch==='G'){ ex={r,c}; g[r][c]=' '; }
+        });
+      });
+      return { grid:g, player:start, enemies:e, powerups:p, exit:ex };
+    }
+
+    function nextEnemyStep(g, from, target){
+      const moves=[{dr:-1,dc:0},{dr:1,dc:0},{dr:0,dc:-1},{dr:0,dc:1}].sort((a,b)=>{
+        const da = Math.abs((from.r+a.dr)-target.r)+Math.abs((from.c+a.dc)-target.c);
+        const db = Math.abs((from.r+b.dr)-target.r)+Math.abs((from.c+b.dc)-target.c);
+        return da-db;
+      });
+      for(const m of moves){
+        const nr=from.r+m.dr, nc=from.c+m.dc;
+        if(inBounds(g,nr,nc) && !isWall(g,nr,nc)) return {r:nr,c:nc};
+      }
+      return { ...from };
+    }
+
+    // ------- INIT / RENDER -------
+    function loadLevel(index){
+      const idx = ((index % LEVELS.length)+LEVELS.length)%LEVELS.length;
+      const parsed = parseLevel(LEVELS[idx]);
+      grid = parsed.grid;
+      player = parsed.player;
+      enemies = parsed.enemies;
+      powerups = parsed.powerups;
+      exit = parsed.exit;
+      frozenUntil = 0; won=false; lost=false; message = 'Reach the exit!';
+      layoutGrid();
+      draw();
+      renderHeader();
+      renderFooter();
+    }
+
+    function layoutGrid(){
+      const cols = grid[0].length; const rows = grid.length;
+      // responsive cell size (fit width up to 600px nicely)
+      const pad = 16;
+      const maxW = Math.min(window.innerWidth, 640);
+      const cell = Math.floor((maxW - pad*2) / cols);
+      gridEl.style.setProperty('--cell', cell + 'px');
+      gridEl.style.width = (cell*cols) + 'px';
+      gridEl.style.height = (cell*rows) + 'px';
+    }
+
+    function draw(){
+      const rows = grid.length; const cols = grid[0].length;
+      const frag = document.createDocumentFragment();
+      for(let r=0;r<rows;r++){
+        const rowEl = document.createElement('div');
+        rowEl.className='row';
+        for(let c=0;c<cols;c++){
+          const cell = document.createElement('div');
+          cell.className = 'cell' + (isWall(grid,r,c)?' wall':'');
+          const posKey = `${r},${c}`;
+          if(exit.r===r && exit.c===c) cell.classList.add('exit');
+          if(powerups.has(posKey)) cell.classList.add('power');
+          if(enemies.some(e=>e.r===r && e.c===c)) cell.classList.add('enemy');
+          if(player.r===r && player.c===c) cell.classList.add('player');
+          rowEl.appendChild(cell);
+        }
+        frag.appendChild(rowEl);
+      }
+      gridEl.replaceChildren(frag);
+    }
+
+    function renderHeader(){
+      const lvlNum = (((levelIndex % LEVELS.length)+LEVELS.length)%LEVELS.length)+1;
+      const frozen = Date.now() < frozenUntil ? ' • FROZEN!' : '';
+      if(!gameWon){
+        subtitleEl.textContent = `Level ${lvlNum} • Lives ${lives}${frozen}`;
+        messageEl.textContent = message;
+      } else {
+        subtitleEl.textContent = '🏆 YOU WIN! 🏆';
+        messageEl.textContent = 'Great run — play again?';
+      }
+    }
+
+    function renderFooter(){
+      footerEl.innerHTML = '';
+      if(!gameWon){
+        const mk = (label, fn)=>{ const b=document.createElement('button'); b.className='btn-sm'; b.textContent=label; b.onclick=fn; return b; };
+        footerEl.append(mk('Reset Level', resetLevel), mk('Reset Game', resetGame), mk('Next Level', ()=>{ levelIndex++; loadLevel(levelIndex);}));
+      } else {
+        const b=document.createElement('button'); b.className='btn-sm'; b.textContent='Play Again'; b.onclick=resetGame; footerEl.append(b);
+      }
+    }
+
+    // ------- GAMEPLAY -------
+    function tryMove(dr, dc){
+      if(won||lost||gameWon) return;
+      const nr = player.r + dr, nc = player.c + dc;
+      if(!inBounds(grid,nr,nc) || isWall(grid,nr,nc)) return;
+      const posKey = `${nr},${nc}`;
+      if(powerups.has(posKey)){
+        powerups.delete(posKey);
+        frozenUntil = Date.now() + FREEZE_DURATION_MS;
+        message = 'Enemies frozen!';
+      }
+      player = { r:nr, c:nc };
+      // exit
+      if(nr===exit.r && nc===exit.c){
+        if(REQUIRE_ALL_POWERUPS && powerups.size>0){
+          message = 'Collect all power-ups first!';
+        } else {
+          const lastLevel = ((levelIndex % LEVELS.length) === LEVELS.length-1);
+          if(lastLevel){
+            gameWon = true; won = true; message = 'You Win!';
+            drawWinGrid();
+            renderHeader();
+            renderFooter();
+            return;
+          } else {
+            won = true; message = 'Level complete!';
+            setTimeout(()=>{ levelIndex++; loadLevel(levelIndex); }, 600);
+          }
+        }
+      }
+      draw();
+      renderHeader();
+    }
+
+    let enemyTimer = null;
+    function startEnemyLoop(){
+      stopEnemyLoop();
+      enemyTimer = setInterval(()=>{
+        if(won||lost||gameWon) return;
+        const now = Date.now();
+        if(now < frozenUntil) return; // frozen → skip
+        // move enemies
+        const next = enemies.map(e=>nextEnemyStep(grid, e, player));
+        // collision check
+        if(next.some(e=>e.r===player.r && e.c===player.c)){
+          lives = Math.max(0, lives-1);
+          if(lives<=0){
+            lost = true; message = 'Game Over!';
+          } else {
+            const parsed = parseLevel(LEVELS[((levelIndex%LEVELS.length)+LEVELS.length)%LEVELS.length]);
+            player = parsed.player; // respawn
+            message = `Ouch! Lives left: ${lives}`;
+          }
+        }
+        enemies = next;
+        draw();
+        renderHeader();
+      }, ENEMY_TICK_MS);
+    }
+    function stopEnemyLoop(){ if(enemyTimer){ clearInterval(enemyTimer); enemyTimer=null; } }
+
+    function resetLevel(){ if(gameWon) return; const parsed = parseLevel(LEVELS[((levelIndex%LEVELS.length)+LEVELS.length)%LEVELS.length]); grid=parsed.grid; player=parsed.player; enemies=parsed.enemies; powerups=parsed.powerups; frozenUntil=0; won=false; lost=false; message='Level reset!'; layoutGrid(); draw(); renderHeader(); }
+    function resetGame(){ levelIndex=0; lives=LIVES_START; frozenUntil=0; won=false; lost=false; gameWon=false; message='New game!'; loadLevel(levelIndex); }
+
+    // Final WIN tile-art (uses same grid container)
+    let winPulse = false; let winInterval=null;
+    function drawWinGrid(){
+      const rows = grid.length, cols = grid[0].length;
+      const artRows = WIN_ART.length, artCols = WIN_ART[0].length;
+      const padTop = Math.max(0, Math.floor((rows - artRows)/2));
+      const padLeft= Math.max(0, Math.floor((cols - artCols)/2));
+      const frag = document.createDocumentFragment();
+      for(let r=0;r<rows;r++){
+        const rowEl = document.createElement('div'); rowEl.className='row';
+        for(let c=0;c<cols;c++){
+          const ar = r-padTop, ac=c-padLeft;
+          const lit = (ar>=0 && ar<artRows && ac>=0 && ac<artCols && WIN_ART[ar][ac]==='X');
+          const cell=document.createElement('div'); cell.className='cell';
+          cell.style.background = lit ? (winPulse? '#d6b568' : WIN_ON_COLOR) : WIN_OFF_COLOR;
+          rowEl.appendChild(cell);
+        }
+        frag.appendChild(rowEl);
+      }
+      gridEl.replaceChildren(frag);
+      if(winInterval) clearInterval(winInterval);
+      winInterval = setInterval(()=>{ winPulse=!winPulse; drawWinGrid(); }, 400);
+    }
+
+    // Keyboard controls (arrows / WASD)
+    window.addEventListener('keydown', (e)=>{
+      const key = e.key.toLowerCase();
+      if(['arrowup','w'].includes(key)) { e.preventDefault(); tryMove(-1,0); }
+      if(['arrowdown','s'].includes(key)) { e.preventDefault(); tryMove(1,0); }
+      if(['arrowleft','a'].includes(key)) { e.preventDefault(); tryMove(0,-1); }
+      if(['arrowright','d'].includes(key)) { e.preventDefault(); tryMove(0,1); }
+      if(key==='r') resetLevel();
+    }, { passive:false });
+
+    // D-Pad buttons
+    document.getElementById('controls').addEventListener('click', (e)=>{
+      const btn = e.target.closest('button[data-dir]'); if(!btn) return;
+      const d = btn.getAttribute('data-dir');
+      const v = { up:[-1,0], down:[1,0], left:[0,-1], right:[0,1] }[d];
+      tryMove(v[0], v[1]);
+    });
+
+    // Responsive sizing
+    window.addEventListener('resize', ()=>{ layoutGrid(); });
+
+    // Boot
+    loadLevel(levelIndex);
+    startEnemyLoop();
+  </script>
+</body>
+</html>
